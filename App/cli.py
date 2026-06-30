@@ -5,7 +5,14 @@ from rich.console import Console
 
 from .hashing import hash_exact_duplicates
 from .indexer import build_index
-from .project import add_source, create_project, get_source, relink_source, require_project, same_filesystem_warning
+from .project import (
+    add_source,
+    create_project,
+    relink_source,
+    require_project,
+    same_filesystem_warning,
+    set_destination,
+)
 from .reporting import generate_exact_duplicate_report, generate_inventory_report, show_status
 from .scanner import scan_source
 
@@ -19,13 +26,30 @@ console = Console()
 
 @project_app.command("create")
 def project_create(
-    name: str = typer.Argument(..., help="Long-lived catalog name, e.g. vishnoi-family-media."),
-    destination: str = typer.Option(..., "--destination", help="Future organized-media destination. Must not overlap a source."),
+    name: str = typer.Argument(..., help="Long-lived catalog name, for example family-media."),
+    destination: str | None = typer.Option(
+        None,
+        "--destination",
+        help="Optional future organized-media destination. Configure it before export.",
+    ),
 ) -> None:
     project = create_project(name, destination)
     console.print(f"[bold green]Project created:[/bold green] {project['slug']}")
     console.print(f"Runtime state: runtime/{project['slug']}/")
+    if project["destination_path"]:
+        console.print(f"Destination: {project['destination_path']}")
+    else:
+        console.print("Destination: not configured (not needed for inventory, scan, index, or reports).")
     console.print("Next: data-segregator source add <project> --label <label> --path <source>")
+
+
+@project_app.command("set-destination")
+def project_set_destination(
+    name: str = typer.Argument(..., help="Existing project name."),
+    path: str = typer.Option(..., "--path", help="Separate final organized-media destination."),
+) -> None:
+    project = set_destination(name, path)
+    console.print(f"[bold green]Destination configured:[/bold green] {project['destination_path']}")
 
 
 @project_app.command("info")
@@ -41,7 +65,7 @@ def source_add(
 ) -> None:
     source = add_source(project_name, label, path)
     project = require_project(project_name)
-    if same_filesystem_warning(source["path"], project["destination_path"]):
+    if same_filesystem_warning(source["path"], project.get("destination_path")):
         console.print("[yellow]Warning:[/yellow] source and destination appear to be on the same filesystem. This is not a backup.")
     console.print(f"[bold green]Source added:[/bold green] {source['label']}")
     console.print("Next: data-segregator scan <project> --source <label>")
