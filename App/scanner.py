@@ -111,6 +111,7 @@ def flush_batch(handle, writer: csv.DictWriter, batch: list[dict]) -> None:
         return
     writer.writerows(batch)
     handle.flush()
+    os.fsync(handle.fileno())
     batch.clear()
 
 
@@ -144,7 +145,7 @@ def scan_source(project_name: str, source_label: str) -> None:
     interrupted = False
     started = time.perf_counter()
 
-    console.print("[bold green]Family Media Separation — source scan[/bold green]")
+    console.print("[bold green]Data Segregator — media source scan[/bold green]")
     console.print(f"Project: {project['slug']}")
     console.print(f"Source: {source['label']} → {root}")
     if resumed:
@@ -158,6 +159,7 @@ def scan_source(project_name: str, source_label: str) -> None:
         if source_mode == "w":
             writer.writeheader()
             manifest_handle.flush()
+            os.fsync(manifest_handle.fileno())
 
         with Progress(
             SpinnerColumn(),
@@ -249,4 +251,4 @@ def scan_source(project_name: str, source_label: str) -> None:
     else:
         console.print("[bold green]Source manifest complete.[/bold green]")
         console.print(f"Records: {total_records:,} | Selected media: {format_size(total_size)} | Errors: {errors:,}")
-        console.print(f"Next: family-media index {project['slug']}")
+        console.print(f"Next: data-segregator index {project['slug']}")
