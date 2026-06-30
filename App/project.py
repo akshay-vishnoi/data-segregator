@@ -29,7 +29,7 @@ def require_project(project_name: str) -> dict:
     if not config_path.exists():
         raise FileNotFoundError(
             f"Project '{slugify(project_name)}' does not exist. "
-            "Create it with: family-media project create <name> --destination <path>"
+            "Create it with: data-segregator project create <name> --destination <path>"
         )
     return json.loads(config_path.read_text(encoding="utf-8"))
 
