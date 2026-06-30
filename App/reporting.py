@@ -23,7 +23,7 @@ def report_dir(project_name: str) -> Path:
 def generate_inventory_report(project_name: str) -> Path:
     require_project(project_name)
     if not database_path(project_name).exists():
-        raise FileNotFoundError("Database not found. Run: family-media index <project>")
+        raise FileNotFoundError("Database not found. Run: data-segregator index <project>")
     conn = get_connection(project_name)
     total = conn.execute("SELECT COUNT(*) AS count, COALESCE(SUM(size_bytes), 0) AS bytes FROM media_files").fetchone()
     type_rows = conn.execute("""SELECT media_type, confidence, COUNT(*) AS count, COALESCE(SUM(size_bytes),0) AS bytes
@@ -42,11 +42,11 @@ def generate_inventory_report(project_name: str) -> Path:
         f"- Size: **{format_size(total['bytes'])}**", "",
         "## By Source", "", "| Source | Files | Size |", "|---|---:|---:|",
     ]
-    lines.extend(f"| {r['source_label']} | {r['count']:,} | {format_size(r['bytes'])} |" for r in source_rows)
+    lines.extend(f"| {row['source_label']} | {row['count']:,} | {format_size(row['bytes'])} |" for row in source_rows)
     lines.extend(["", "## By Type / Confidence", "", "| Type | Confidence | Files | Size |", "|---|---|---:|---:|"])
-    lines.extend(f"| {r['media_type']} | {r['confidence']} | {r['count']:,} | {format_size(r['bytes'])} |" for r in type_rows)
+    lines.extend(f"| {row['media_type']} | {row['confidence']} | {row['count']:,} | {format_size(row['bytes'])} |" for row in type_rows)
     lines.extend(["", "## By Extension", "", "| Extension | Type | Confidence | Files | Size |", "|---|---|---|---:|---:|"])
-    lines.extend(f"| {r['extension']} | {r['media_type']} | {r['confidence']} | {r['count']:,} | {format_size(r['bytes'])} |" for r in extension_rows)
+    lines.extend(f"| {row['extension']} | {row['media_type']} | {row['confidence']} | {row['count']:,} | {format_size(row['bytes'])} |" for row in extension_rows)
 
     output = report_dir(project_name) / "media_inventory_report.md"
     output.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -56,7 +56,7 @@ def generate_inventory_report(project_name: str) -> Path:
 def generate_exact_duplicate_report(project_name: str) -> Path:
     require_project(project_name)
     if not database_path(project_name).exists():
-        raise FileNotFoundError("Database not found. Run: family-media index <project>")
+        raise FileNotFoundError("Database not found. Run: data-segregator index <project>")
     conn = get_connection(project_name)
     groups = conn.execute("""SELECT sha256, COUNT(*) AS copies, MIN(size_bytes) AS size_bytes
                              FROM media_files WHERE sha256 IS NOT NULL
@@ -79,7 +79,7 @@ def show_status(project_name: str) -> None:
     table = Table(title=f"Project: {project['slug']}")
     table.add_column("Item")
     table.add_column("Value")
-    table.add_row("Destination", project["destination_path"])
+    table.add_row("Destination", project.get("destination_path") or "Not configured")
     table.add_row("Registered sources", str(len(project["sources"])))
     table.add_row("Database", "Present" if database_path(project_name).exists() else "Not built")
     for source in project["sources"]:
