@@ -24,33 +24,37 @@ def project_config_path(project_name: str) -> Path:
     return project_dir(project_name) / "project.json"
 
 
+def configured_destination(project: dict) -> Path | None:
+    raw_destination = project.get("destination_path")
+    return resolved(raw_destination) if raw_destination else None
+
+
 def require_project(project_name: str) -> dict:
     config_path = project_config_path(project_name)
     if not config_path.exists():
         raise FileNotFoundError(
             f"Project '{slugify(project_name)}' does not exist. "
-            "Create it with: data-segregator project create <name> --destination <path>"
+            "Create it with: data-segregator project create <name>"
         )
     return json.loads(config_path.read_text(encoding="utf-8"))
 
 
 def save_project(project: dict) -> None:
-    project_name = project["slug"]
-    target = project_config_path(project_name)
+    target = project_config_path(project["slug"])
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_suffix(".tmp")
     temporary.write_text(json.dumps(project, indent=2) + "\n", encoding="utf-8")
     temporary.replace(target)
 
 
-def create_project(name: str, destination: str) -> dict:
+def create_project(name: str, destination: str | None = None) -> dict:
     slug = slugify(name)
     root = project_dir(slug)
     config_path = root / "project.json"
     if config_path.exists():
         raise FileExistsError(f"Project '{slug}' already exists.")
 
-    destination_path = resolved(destination)
+    destination_path = resolved(destination) if destination else None
     root.mkdir(parents=True, exist_ok=False)
     for child in ("database", "sources", "reports", "logs", "exports"):
         (root / child).mkdir(parents=True, exist_ok=True)
@@ -60,9 +64,23 @@ def create_project(name: str, destination: str) -> dict:
         "name": name,
         "slug": slug,
         "created_at": utc_now(),
-        "destination_path": str(destination_path),
+        "destination_path": str(destination_path) if destination_path else None,
         "sources": [],
     }
+    save_project(project)
+    return project
+
+
+def set_destination(project_name: str, destination: str) -> dict:
+    project = require_project(project_name)
+    destination_path = resolved(destination)
+    for source in project["sources"]:
+        if paths_overlap(resolved(source["path"]), destination_path):
+            raise ValueError(
+                f"Configured destination overlaps source '{source['label']}'. Choose a separate destination."
+            )
+    project["destination_path"] = str(destination_path)
+    project["destination_configured_at"] = utc_now()
     save_project(project)
     return project
 
@@ -74,11 +92,9 @@ def add_source(project_name: str, label: str, source_path: str) -> dict:
     if not source.exists() or not source.is_dir():
         raise FileNotFoundError(f"Source folder does not exist or is not a folder: {source}")
 
-    destination = resolved(project["destination_path"])
-    if paths_overlap(source, destination):
-        raise ValueError(
-            "Source and destination overlap. Choose a separate final media destination."
-        )
+    destination = configured_destination(project)
+    if destination and paths_overlap(source, destination):
+        raise ValueError("Source and destination overlap. Choose a separate final media destination.")
 
     if any(existing["label"] == safe_label for existing in project["sources"]):
         raise ValueError(f"A source with label '{safe_label}' already exists.")
@@ -92,9 +108,7 @@ def add_source(project_name: str, label: str, source_path: str) -> dict:
         "last_scan_at": None,
     }
     project["sources"].append(source_record)
-
-    source_runtime = project_dir(project_name) / "sources" / safe_label
-    source_runtime.mkdir(parents=True, exist_ok=True)
+    (project_dir(project_name) / "sources" / safe_label).mkdir(parents=True, exist_ok=True)
     save_project(project)
     return source_record
 
@@ -114,8 +128,8 @@ def relink_source(project_name: str, label: str, source_path: str) -> dict:
     if not new_path.exists() or not new_path.is_dir():
         raise FileNotFoundError(f"Source folder does not exist or is not a folder: {new_path}")
 
-    destination = resolved(project["destination_path"])
-    if paths_overlap(new_path, destination):
+    destination = configured_destination(project)
+    if destination and paths_overlap(new_path, destination):
         raise ValueError("Source and destination overlap. Refusing to relink.")
 
     source["path"] = str(new_path)
@@ -138,7 +152,9 @@ def update_source_status(project: dict, source_id: str, status: str) -> None:
     raise KeyError(f"Source ID '{source_id}' was not found.")
 
 
-def same_filesystem_warning(source_path: str, destination_path: str) -> bool:
+def same_filesystem_warning(source_path: str, destination_path: str | None) -> bool:
+    if not destination_path:
+        return False
     try:
         return os.stat(source_path).st_dev == os.stat(destination_path).st_dev
     except OSError:
