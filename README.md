@@ -4,22 +4,22 @@ A **safe, local-first, resumable** toolkit for separating useful data from mixed
 
 The first implemented module is **Media Separation**: it inventories photos, videos, media companions, and review candidates from a mixed archive containing documents, projects, downloads, code, and other files.
 
-Future modules may handle documents, project files, downloads, or other data types. They should use separate projects and rules rather than treating every file type with the same workflow.
+Future modules may handle documents, project files, downloads, or other data types. Each module should use separate projects and rules rather than treating every file type with the same workflow.
 
-This repository stores only code and documentation. Your personal paths, manifests, database, reports, logs, and media live under `runtime/`, which is ignored by Git.
+This repository stores only code and documentation. Personal paths, manifests, databases, reports, logs, and media live under `runtime/`, which is ignored by Git.
 
 ## Naming model
 
 - **Application / Git repository:** `data-segregator`
-- **Project:** a long-lived catalog for one data domain, e.g. `vishnoi-family-media`
-- **Source:** one import batch, e.g. `2026-master-data` or `old-iphone-2026`
+- **Project:** a long-lived catalog for one data domain, for example `family-media`
+- **Source:** one import batch, for example `primary-archive` or `old-phone-backup`
 
 Example future projects:
 
 ```text
-vishnoi-family-media
-vishnoi-documents
-vishnoi-project-archives
+family-media
+documents-archive
+project-archives
 ```
 
 ## Safety model
@@ -60,7 +60,7 @@ data-segregator/                 # Internal Mac storage + Git repository
 ├── App/                          # Python application
 ├── tests/
 ├── runtime/                      # Git-ignored local state
-│   └── vishnoi-family-media/
+│   └── family-media/
 │       ├── project.json
 │       ├── database/media.sqlite
 │       ├── sources/<source-label>/manifest.csv
@@ -74,7 +74,7 @@ data-segregator/                 # Internal Mac storage + Git repository
 └── .gitignore
 ```
 
-Your mixed source data and eventual destination live outside this repository, generally on external storage.
+Mixed source data and the eventual destination live outside this repository, generally on external storage.
 
 ## Setup on macOS
 
@@ -90,43 +90,43 @@ You can then use `data-segregator ...` while the virtual environment is active. 
 
 ## Example workflow — Media Separation
 
-Create the permanent catalog project and specify the eventual organized-media destination:
+Create a permanent catalog project and specify the eventual organized-media destination:
 
 ```bash
-data-segregator project create vishnoi-family-media \
-  --destination "/Volumes/FAMILY_MEDIA/Media_Organized"
+data-segregator project create family-media \
+  --destination "/Volumes/DESTINATION_DRIVE/Media_Organized"
 ```
 
 Add the first mixed source:
 
 ```bash
-data-segregator source add vishnoi-family-media \
-  --label "2026-master-data" \
-  --path "/Volumes/AKSHAY 5TB/Photo Master Library/Data"
+data-segregator source add family-media \
+  --label "primary-archive" \
+  --path "/Volumes/SOURCE_DRIVE/Data"
 ```
 
 Scan that source (read-only):
 
 ```bash
-data-segregator scan vishnoi-family-media --source 2026-master-data
+data-segregator scan family-media --source primary-archive
 ```
 
 Build the SQLite catalog and reports:
 
 ```bash
-data-segregator index vishnoi-family-media
-data-segregator report vishnoi-family-media
+data-segregator index family-media
+data-segregator report family-media
 ```
 
 Later, add a newly discovered source to the same project:
 
 ```bash
-data-segregator source add vishnoi-family-media \
-  --label "old-iphone-2026" \
-  --path "/Volumes/OLD_IPHONE/DCIM"
+data-segregator source add family-media \
+  --label "old-phone-backup" \
+  --path "/Volumes/PHONE_BACKUP/DCIM"
 
-data-segregator scan vishnoi-family-media --source old-iphone-2026
-data-segregator index vishnoi-family-media
+data-segregator scan family-media --source old-phone-backup
+data-segregator index family-media
 ```
 
 ## Media classification
@@ -153,4 +153,4 @@ data-segregator index vishnoi-family-media
 
 - A resumed scan may traverse a source tree again to find current files, but already written manifest records are not duplicated.
 - Adding a new source scans only that new source. It does not reprocess old source manifests, metadata, or hashes.
-- Exact duplicate handling will use content hashes. It never deletes a source copy.
+- Exact duplicate handling uses content hashes and never deletes a source copy.
