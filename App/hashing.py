@@ -139,31 +139,21 @@ def generate_hash_plan_report(project_name: str, source_label: str | None = None
     output = report_dir / "exact_duplicate_hash_plan.md"
     scope = f"Source: `{source_label}`" if source_label else "Scope: all registered sources"
     lines = [
-        "# Exact Duplicate Hash Plan",
-        "",
-        f"Generated: `{datetime.now(timezone.utc).isoformat()}`",
-        scope,
-        "",
-        "## Planned reads",
-        "",
+        "# Exact Duplicate Hash Plan", "",
+        f"Generated: `{datetime.now(timezone.utc).isoformat()}`", scope, "",
+        "## Planned reads", "",
         f"- Candidate files to hash: **{plan.candidate_records:,}**",
         f"- Candidate bytes to read: **{format_size(plan.candidate_bytes)}**",
-        f"- Same-size groups represented: **{plan.candidate_size_groups:,}**",
-        "",
-        "## Skipped without reading",
-        "",
+        f"- Same-size groups represented: **{plan.candidate_size_groups:,}**", "",
+        "## Skipped without reading", "",
         f"- Unhashed files with a unique size: **{plan.skipped_single_size_records:,}**",
-        f"- Bytes avoided: **{format_size(plan.skipped_single_size_bytes)}**",
-        "",
-        "## Catalog state",
-        "",
+        f"- Bytes avoided: **{format_size(plan.skipped_single_size_bytes)}**", "",
+        "## Catalog state", "",
         f"- Catalog records in scope: **{plan.total_records:,}**",
         f"- Already hashed: **{plan.hashed_records:,}**",
         f"- Existing hash errors: **{plan.hash_errors:,}**",
-        f"- Unhashed records in scope: **{plan.pending_records:,}** ({format_size(plan.pending_bytes)})",
-        "",
-        "## Candidate breakdown",
-        "",
+        f"- Unhashed records in scope: **{plan.pending_records:,}** ({format_size(plan.pending_bytes)})", "",
+        "## Candidate breakdown", "",
         "| Type | Confidence | Files to hash | Bytes to read |",
         "|---|---|---:|---:|",
     ]
@@ -172,9 +162,7 @@ def generate_hash_plan_report(project_name: str, source_label: str | None = None
         for media_type, confidence, count, size_bytes in plan.breakdown
     )
     lines.extend([
-        "",
-        "## Safety notes",
-        "",
+        "", "## Safety notes", "",
         "- Exact duplicates must have the same byte size. Files whose size occurs only once cannot be exact duplicates, so they are skipped without being read.",
         "- The plan considers matching sizes across the entire project, even when hashing one specific source.",
         "- Hashing reads source files only. It never moves, renames, deletes, or modifies a source file.",
@@ -216,7 +204,12 @@ def _candidate_hash_query(source_label: str | None, limit: int | None) -> tuple[
 
 def hash_exact_duplicates(project_name: str, source_label: str | None = None, limit: int | None = None) -> None:
     project = require_project(project_name)
-    plan = build_hash_plan(project_name, source_label)
+    plan, report_path = generate_hash_plan_report(project_name, source_label)
+    show_hash_plan(plan, report_path)
+    if limit == 0:
+        console.print("[green]Plan only. No source file contents were read.[/green]")
+        return
+
     total = min(plan.candidate_records, limit) if limit is not None else plan.candidate_records
     if total == 0:
         console.print("[green]No same-size unhashed files need exact-duplicate hashing.[/green]")
@@ -237,23 +230,14 @@ def hash_exact_duplicates(project_name: str, source_label: str | None = None, li
             for row in cursor:
                 source = source_by_id.get(row["source_id"])
                 if source is None:
-                    conn.execute(
-                        "UPDATE media_files SET hash_error=? WHERE id=?",
-                        ("Source no longer registered", row["id"]),
-                    )
+                    conn.execute("UPDATE media_files SET hash_error=? WHERE id=?", ("Source no longer registered", row["id"]))
                 else:
                     path = Path(source["path"]) / row["source_relative_path"]
                     try:
                         digest = sha256_file(path)
-                        conn.execute(
-                            "UPDATE media_files SET sha256=?, hash_error=NULL WHERE id=?",
-                            (digest, row["id"]),
-                        )
+                        conn.execute("UPDATE media_files SET sha256=?, hash_error=NULL WHERE id=?", (digest, row["id"]))
                     except Exception as error:
-                        conn.execute(
-                            "UPDATE media_files SET hash_error=? WHERE id=?",
-                            (str(error), row["id"]),
-                        )
+                        conn.execute("UPDATE media_files SET hash_error=? WHERE id=?", (str(error), row["id"]))
                 dirty_updates += 1
                 if dirty_updates >= HASH_COMMIT_EVERY:
                     conn.commit()
