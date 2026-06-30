@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "data-segregator"
+version = "0.1.0"
+description = "Local-first, resumable data separation toolkit. Media separation is the first module."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "rich>=13.7,<15",
+  "typer>=0.12,<1",
+]
+
+[project.scripts]
+data-segregator = "App.cli:app"
+
+[tool.setuptools]
+packages = ["App"]
