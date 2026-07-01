@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import typer
 
-from .review_pack import build_pre_copy_review_pack
+from .review_pack_v2 import build_pre_copy_review_pack
 
 
 def main(
     project_name: str = typer.Argument(..., help="Existing media project name."),
 ) -> None:
-    """Create local pre-copy review CSVs from the dry-run plan only."""
+    """Create corrected local pre-copy review CSVs from the dry-run plan only."""
     build_pre_copy_review_pack(project_name)
 
 
