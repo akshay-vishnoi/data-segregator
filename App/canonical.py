@@ -61,12 +61,15 @@ AVOID_PATTERNS: tuple[tuple[str, int, str], ...] = (
     (r"\barchive\b", -35, "archive-folder"),
     (r"\biphone data\b", -45, "phone-backup-folder"),
     (r"\bmobile data\b", -40, "phone-backup-folder"),
+    (r"\bfull\b.*\bmac\b", -25, "full-device-backup-folder"),
+    (r"\bmac[- ]?[a-z0-9]+\b", -15, "device-named-folder"),
+    (r"(^|/)hdd(/|$)", -30, "disk-backup-folder"),
     (r"\bdesktop\b", -15, "desktop-folder"),
 )
 
 
 def _normalized_path(candidate: DuplicateCandidate) -> str:
-    return f"{candidate.source_relative_path}/{candidate.filename}".replace("\\", "/").casefold()
+    return candidate.source_relative_path.replace("\\", "/").casefold()
 
 
 def _score_candidate(candidate: DuplicateCandidate) -> tuple[int, tuple[str, ...]]:
