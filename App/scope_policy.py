@@ -15,6 +15,9 @@ from .utils import format_size
 
 console = Console()
 MACOS_METADATA_PREFIX = "." + "_"
+DEPENDENCY_TREE_SEGMENTS = frozenset({"node_modules", "bower_components", ".git", ".hg", ".svn"})
+KNOWN_DEVELOPER_ARCHIVE_SEGMENTS = frozenset({"vinsol", "bigbinary", "pariyojnayein"})
+SOFTWARE_GAME_ARCHIVE_SEGMENTS = frozenset({"softwares", "games"})
 
 POLICY_FIELDS = [
     "source_id",
@@ -109,13 +112,21 @@ def _normalised_path(value: str) -> str:
     return value.replace("\\", "/").strip("/")
 
 
+def _path_segments(relative_path: str) -> tuple[str, ...]:
+    return tuple(
+        part.casefold()
+        for part in _normalised_path(relative_path).split("/")
+        if part not in {"", ".", ".."}
+    )
+
+
 def _matches_prefix(relative_path: str, prefix: str) -> bool:
     candidate = _normalised_path(relative_path)
     normalised_prefix = _normalised_path(prefix)
     return candidate == normalised_prefix or candidate.startswith(normalised_prefix + "/")
 
 
-def _decision(policy: dict, relative_path: str) -> dict:
+def _builtin_exclusion(relative_path: str) -> dict[str, str] | None:
     filename = Path(_normalised_path(relative_path)).name
     if filename.startswith(MACOS_METADATA_PREFIX):
         return {
@@ -127,6 +138,42 @@ def _decision(policy: dict, relative_path: str) -> dict:
                 "family-media destination because the corresponding media file is separate."
             ),
         }
+
+    segments = set(_path_segments(relative_path))
+    if segments & DEPENDENCY_TREE_SEGMENTS:
+        return {
+            "policy_status": "preserve-exclude",
+            "export_scope": "exclude-default",
+            "policy_rule_id": "preserve-exclude-dependency-tree",
+            "policy_reason": (
+                "Software dependency or repository metadata tree: preserve in place, but exclude from the family-media destination."
+            ),
+        }
+    if segments & KNOWN_DEVELOPER_ARCHIVE_SEGMENTS:
+        return {
+            "policy_status": "preserve-exclude",
+            "export_scope": "exclude-default",
+            "policy_rule_id": "preserve-exclude-known-developer-archive",
+            "policy_reason": (
+                "Known developer-work archive path: preserve in place, but exclude from the family-media destination."
+            ),
+        }
+    if segments & SOFTWARE_GAME_ARCHIVE_SEGMENTS:
+        return {
+            "policy_status": "preserve-exclude",
+            "export_scope": "exclude-default",
+            "policy_rule_id": "preserve-exclude-software-game-archive",
+            "policy_reason": (
+                "Software or game archive path: preserve in place, but exclude from the family-media destination."
+            ),
+        }
+    return None
+
+
+def _decision(policy: dict, relative_path: str) -> dict:
+    builtin = _builtin_exclusion(relative_path)
+    if builtin is not None:
+        return builtin
 
     for rule in policy["rules"]:
         if _matches_prefix(relative_path, str(rule["path_prefix"])):
@@ -170,6 +217,7 @@ def _write_report(
         "## Policy", "",
         "- `projects/**` is classified as **preserve-exclude**.",
         "- macOS resource-metadata files are preserved on the source but excluded from the family-media destination.",
+        "- Dependency trees such as `node_modules`, known developer-work archive folders, and software/game archive folders are preserved but excluded from the family-media destination.",
         "- Preserve-exclude means the source stays untouched and is excluded from a future family-media export by default.",
         "- All other source paths remain **family-media-candidate** for review; this is not an export decision.",
         "- This command only creates local policy/report files. It does not copy, rename, move, or delete source files.", "",
