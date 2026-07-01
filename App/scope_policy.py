@@ -14,6 +14,7 @@ from .project import project_dir, require_project, source_runtime_dir
 from .utils import format_size
 
 console = Console()
+MACOS_METADATA_PREFIX = "." + "_"
 
 POLICY_FIELDS = [
     "source_id",
@@ -115,6 +116,18 @@ def _matches_prefix(relative_path: str, prefix: str) -> bool:
 
 
 def _decision(policy: dict, relative_path: str) -> dict:
+    filename = Path(_normalised_path(relative_path)).name
+    if filename.startswith(MACOS_METADATA_PREFIX):
+        return {
+            "policy_status": "preserve-exclude",
+            "export_scope": "exclude-default",
+            "policy_rule_id": "preserve-exclude-macos-metadata",
+            "policy_reason": (
+                "macOS resource metadata file: preserve in place, but exclude from the "
+                "family-media destination because the corresponding media file is separate."
+            ),
+        }
+
     for rule in policy["rules"]:
         if _matches_prefix(relative_path, str(rule["path_prefix"])):
             return {
@@ -156,6 +169,7 @@ def _write_report(
         f"Generated: `{_utc_now()}`", "",
         "## Policy", "",
         "- `projects/**` is classified as **preserve-exclude**.",
+        "- macOS resource-metadata files are preserved on the source but excluded from the family-media destination.",
         "- Preserve-exclude means the source stays untouched and is excluded from a future family-media export by default.",
         "- All other source paths remain **family-media-candidate** for review; this is not an export decision.",
         "- This command only creates local policy/report files. It does not copy, rename, move, or delete source files.", "",
