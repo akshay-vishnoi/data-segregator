@@ -29,12 +29,11 @@ class TsReclassificationPlan:
     source_label: str
     manifest_path: Path
     ts_records: int
-    retain_transport_stream: int
+    retain_candidate_media: int
     retain_unverified: int
     remove_nonmedia: int
     remove_bytes: int
     changed_since_scan: int
-    missing_or_unreadable: int
 
 
 def _utc_file_stamp() -> str:
@@ -63,8 +62,7 @@ def _read_manifest_rows(manifest_path: Path) -> list[dict[str, str]]:
 
 
 def build_ts_reclassification_plan(project_name: str, source_label: str) -> tuple[TsReclassificationPlan, list[dict[str, str]]]:
-    project, source = get_source(project_name, source_label)
-    del project
+    _, source = get_source(project_name, source_label)
     runtime = source_runtime_dir(project_name, source_label)
     manifest_path = runtime / "manifest.csv"
     if not manifest_path.exists():
@@ -76,12 +74,11 @@ def build_ts_reclassification_plan(project_name: str, source_label: str) -> tupl
 
     rows = _read_manifest_rows(manifest_path)
     ts_records = 0
-    retained_transport = 0
+    retained_candidates = 0
     retained_unverified = 0
     remove_nonmedia = 0
     remove_bytes = 0
     changed_since_scan = 0
-    missing_or_unreadable = 0
 
     for row in rows:
         if row.get("extension", "").lower() != ".ts":
@@ -94,27 +91,22 @@ def build_ts_reclassification_plan(project_name: str, source_label: str) -> tupl
             changed_since_scan += 1
             continue
 
-        classification = classify_file(path)
-        if classification is None:
+        if classify_file(path) is None:
             remove_nonmedia += 1
             remove_bytes += int(row["size_bytes"])
-        elif classification == ("video", "candidate"):
-            retained_transport += 1
         else:
-            retained_unverified += 1
-            missing_or_unreadable += 1
+            retained_candidates += 1
 
     plan = TsReclassificationPlan(
         project_name=project_name,
         source_label=source_label,
         manifest_path=manifest_path,
         ts_records=ts_records,
-        retain_transport_stream=retained_transport,
+        retain_candidate_media=retained_candidates,
         retain_unverified=retained_unverified,
         remove_nonmedia=remove_nonmedia,
         remove_bytes=remove_bytes,
         changed_since_scan=changed_since_scan,
-        missing_or_unreadable=missing_or_unreadable,
     )
     return plan, rows
 
@@ -124,12 +116,11 @@ def show_ts_reclassification_plan(plan: TsReclassificationPlan) -> None:
     table.add_column("Item")
     table.add_column("Value", justify="right")
     table.add_row("Current .ts records", f"{plan.ts_records:,}")
-    table.add_row("Recognized MPEG transport streams", f"{plan.retain_transport_stream:,}")
+    table.add_row("Retained as candidate MPEG TS", f"{plan.retain_candidate_media:,}")
     table.add_row("Retained because file changed/unavailable", f"{plan.retain_unverified:,}")
     table.add_row("Confirmed non-media to remove", f"{plan.remove_nonmedia:,}")
     table.add_row("Non-media bytes to remove", format_size(plan.remove_bytes))
     table.add_row("Changed since scan", f"{plan.changed_since_scan:,}")
-    table.add_row("Other unverified", f"{plan.missing_or_unreadable:,}")
     console.print(table)
     console.print("[yellow]Plan only: no manifest or database changes have been made.[/yellow]")
 
@@ -185,8 +176,9 @@ def apply_ts_reclassification(project_name: str, source_label: str) -> tuple[TsR
     _, source = get_source(project_name, source_label)
     runtime = source_runtime_dir(project_name, source_label)
 
-    remove_paths = []
-    retained_rows = []
+    remove_paths: list[str] = []
+    removed_bytes = 0
+    retained_rows: list[dict[str, str]] = []
     root = Path(source["path"])
     for row in original_rows:
         if row.get("extension", "").lower() != ".ts":
@@ -195,11 +187,12 @@ def apply_ts_reclassification(project_name: str, source_label: str) -> tuple[TsR
         path = root / row["source_relative_path"]
         if _row_matches_current_file(row, path) and classify_file(path) is None:
             remove_paths.append(row["source_relative_path"])
+            removed_bytes += int(row["size_bytes"])
             continue
         retained_rows.append(row)
 
-    # A second plan check protects against a source changing between the initial read
-    # and apply pass. Records that changed are retained rather than removed.
+    # A second inspection protects against a source changing between planning and
+    # application. A changed or unavailable file is retained rather than removed.
     backup_path = _write_manifest_atomically(plan.manifest_path, retained_rows)
     deleted_catalog_rows = _delete_catalog_rows(project_name, source["id"], remove_paths)
 
@@ -234,12 +227,12 @@ def apply_ts_reclassification(project_name: str, source_label: str) -> tuple[TsR
             f"- Source: `{source['label']}`",
             f"- Original .ts records: **{plan.ts_records:,}**",
             f"- Confirmed non-media records removed from media manifest: **{len(remove_paths):,}**",
-            f"- Removed bytes: **{format_size(sum(int(row['size_bytes']) for row in original_rows if row.get('source_relative_path') in set(remove_paths)))}**",
-            f"- Recognized/retained MPEG transport streams: **{plan.retain_transport_stream:,}**",
+            f"- Removed bytes: **{format_size(removed_bytes)}**",
+            f"- Retained candidate MPEG transport streams: **{plan.retain_candidate_media:,}**",
             f"- Retained due to file change/unavailability: **{plan.retain_unverified:,}**",
             f"- Catalog rows removed: **{deleted_catalog_rows:,}**",
             f"- Manifest backup: `{backup_path.name}`", "",
-            "No source file was changed. Existing duplicate/canonical reports should be regenerated.",
+            "No source file was changed. Existing duplicate and canonical reports should be regenerated.",
         ]) + "\n",
         encoding="utf-8",
     )
